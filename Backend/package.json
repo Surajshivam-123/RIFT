@@ -1,0 +1,12 @@
+{
+  "name": "rift-hackathon",
+  "version": "1.0.0",
+  "description": "backend-project",
+  "license": "ISC",
+  "author": "Suraj",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm start"
+  }
+}
