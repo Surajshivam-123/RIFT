@@ -66,8 +66,13 @@ app.post('/api/analyze', upload.single('file'), (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Fraud Detection API running on http://localhost:${PORT}`);
-  console.log(`📊 Upload endpoint: POST http://localhost:${PORT}/api/analyze`);
-});
+// Start server (only for local development)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Fraud Detection API running on http://localhost:${PORT}`);
+    console.log(`📊 Upload endpoint: POST http://localhost:${PORT}/api/analyze`);
+  });
+}
+
+// Export for Vercel serverless
+export default app;
