@@ -50,6 +50,9 @@ export class ScoreCalculatorEnhanced {
     score += this._scoreSmurfingPatterns(accountId, patterns.smurfingPatterns);
     score += this._scoreWashTrading(accountId, patterns.washTrading);
     
+    // Louvain community detection (additional 40 points max - industry-standard algorithm)
+    score += this._scoreLouvainSmurfingRings(accountId, patterns.smurfingRingsLouvain);
+    
     // Apply legitimacy penalties
     score += this._calculateLegitimacyPenalty(accountId);
     
@@ -287,6 +290,56 @@ export class ScoreCalculatorEnhanced {
     if (count >= 10) return 10; // Extensive wash trading
     if (count >= 5) return 7;
     return 5;
+  }
+
+  /**
+   * Score Louvain community detection (smurfing rings)
+   * This is high-confidence detection from industry-standard algorithm
+   */
+  _scoreLouvainSmurfingRings(accountId, smurfingRingsLouvain) {
+    if (!smurfingRingsLouvain || !Array.isArray(smurfingRingsLouvain)) return 0;
+    
+    // Find if account is member of any detected ring
+    const memberRing = smurfingRingsLouvain.find(ring => 
+      ring.members.includes(accountId)
+    );
+    
+    if (!memberRing) return 0;
+    
+    // Base score from smurfing score (0-1 scale)
+    const smurfingScore = parseFloat(memberRing.smurfingScore);
+    let score = smurfingScore * 20; // Max 20 points from base score
+    
+    // Bonus for being a central beneficiary
+    const isBeneficiary = memberRing.centralBeneficiaries.some(
+      ben => ben.accountId === accountId
+    );
+    if (isBeneficiary) {
+      score += 15; // High confidence - central beneficiary
+    } else {
+      score += 10; // Member of ring
+    }
+    
+    // Bonus based on pattern type (some patterns are higher confidence)
+    const patternBonuses = {
+      'STRUCTURED_SMURFING': 5,           // Very high confidence
+      'COORDINATED_BURST_SMURFING': 4,    // High confidence
+      'SINGLE_BENEFICIARY_SMURFING': 3,   // High confidence
+      'MULTI_BENEFICIARY_RING': 4,        // High confidence
+      'DISTRIBUTED_SMURFING_NETWORK': 2   // Medium confidence
+    };
+    score += patternBonuses[memberRing.pattern] || 0;
+    
+    // Bonus for high-density rings (more interconnected = higher confidence)
+    const density = parseFloat(memberRing.density);
+    if (density > 0.5) score += 3;
+    else if (density > 0.3) score += 2;
+    
+    // Bonus for high amount consistency
+    const amountConsistency = parseFloat(memberRing.amountConsistency);
+    if (amountConsistency > 0.8) score += 3;
+    
+    return Math.min(40, score); // Cap at 40 points (high-confidence detection)
   }
 
   _calculateLegitimacyPenalty(accountId) {

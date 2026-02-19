@@ -11,7 +11,7 @@ async function testAPI() {
 
   try {
     // Read sample CSV
-    const csvPath = join(__dirname, 'data', 'transactions_10k.csv');
+    const csvPath = join(__dirname, 'test-transactions.csv');
     const csvContent = readFileSync(csvPath, 'utf-8');
     
     console.log('✓ Sample CSV loaded');

@@ -71,21 +71,34 @@ export class FraudDetectionSystemOptimized {
       }
     }
 
-    // Stage 4: Identify fraud rings
+    // Stage 4: Identify fraud rings (including Louvain-detected rings)
     this._reportProgress('Identifying fraud rings...', 90);
     const suspiciousAccountIds = suspiciousAccounts.map(acc => acc.account_id);
-    const rings = analyzer.identifyFraudRings(suspiciousAccountIds);
+    const rings = analyzer.identifyFraudRingsEnhanced(
+      suspiciousAccountIds, 
+      allPatterns.smurfingRingsLouvain
+    );
 
-    // Calculate ring risk scores and assign ring IDs to accounts
+    // Create fraud rings with risk scores and assign ring IDs to accounts
     const fraudRings = [];
     for (const ring of rings) {
+      // Calculate risk score for the ring (pass the Map, not an array)
       const riskScore = scorer.calculateRingRiskScore(ring, accountScores);
+      
       const fraudRing = new FraudRing(
         ring.ring_id,
         ring.member_accounts,
         ring.pattern_type,
         riskScore
       );
+      
+      // Copy additional Louvain metadata if present
+      if (ring.detection_method) fraudRing.detection_method = ring.detection_method;
+      if (ring.louvain_score) fraudRing.louvain_score = ring.louvain_score;
+      if (ring.louvain_pattern) fraudRing.louvain_pattern = ring.louvain_pattern;
+      if (ring.density) fraudRing.density = ring.density;
+      if (ring.central_beneficiaries) fraudRing.central_beneficiaries = ring.central_beneficiaries;
+      
       fraudRings.push(fraudRing);
 
       // Assign ring ID to member accounts
@@ -108,7 +121,8 @@ export class FraudDetectionSystemOptimized {
       fraud_rings_detected: fraudRings.length,
       processing_time_seconds: processingTimeSeconds,
       cycles_detected: allPatterns.cycles.length,
-      patterns_analyzed: 24 // Updated from 15 to 24
+      louvain_smurfing_rings_detected: allPatterns.smurfingRingsLouvain ? allPatterns.smurfingRingsLouvain.length : 0,
+      patterns_analyzed: 25 // Updated to include Louvain detection
     };
 
     this._reportProgress('Complete!', 100);
@@ -240,6 +254,18 @@ export class FraudDetectionSystemOptimized {
 
     if (allPatterns.washTrading && allPatterns.washTrading.has(accountId)) {
       patterns.push('wash_trading');
+    }
+
+    // Louvain community detection (smurfing rings)
+    if (allPatterns.smurfingRingsLouvain && Array.isArray(allPatterns.smurfingRingsLouvain)) {
+      const memberOfRing = allPatterns.smurfingRingsLouvain.find(ring => 
+        ring.members.includes(accountId)
+      );
+      if (memberOfRing) {
+        patterns.push('louvain_smurfing_ring');
+        // Add pattern type for more specific detection
+        patterns.push(`louvain_${memberOfRing.pattern.toLowerCase()}`);
+      }
     }
 
     return patterns;

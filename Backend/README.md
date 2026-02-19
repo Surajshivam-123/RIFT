@@ -28,6 +28,9 @@ Financial transaction fraud detection system using graph analysis algorithms to 
 **Enhanced Patterns** (Implementation details for improved accuracy):
 The system includes additional pattern detection beyond core requirements to improve detection accuracy and reduce false positives. These include velocity anomalies, amount anomalies, unusual timing, burst activity, dormancy reactivation, amount splitting, frequency anomalies, network influence, round-trip transactions, layering depth, counterparty diversity, amount progression, and temporal clustering.
 
+**Advanced Detection** (Industry-Standard Algorithms):
+- **Louvain Community Detection**: Graph-based smurfing ring detection using the Louvain algorithm - the industry-standard approach used by tier-1 financial institutions (HSBC, JPMorgan). Identifies densely connected fraud rings with dramatically lower false positives than rule-based detection. See [LOUVAIN_DETECTION.md](./LOUVAIN_DETECTION.md) for details.
+
 ## Project Structure
 
 ```

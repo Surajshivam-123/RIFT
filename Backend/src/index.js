@@ -22,5 +22,5 @@ export { TransactionGraph } from './graph/TransactionGraph.js';
 // Components
 export { CSVParser } from './parser/CSVParser.js';
 export { GraphAnalyzerEnhanced as GraphAnalyzer } from './analyzer/GraphAnalyzerEnhanced.js';
-export { ScoreCalculator } from './scorer/ScoreCalculator.js';
+export { ScoreCalculatorEnhanced as ScoreCalculator } from './scorer/ScoreCalculatorEnhanced.js';
 export { JSONFormatter } from './formatter/JSONFormatter.js';
