@@ -7,3 +7,4 @@ executive-summary-10k.json
 results-10k-optimized.json
 suspicious-accounts-10k.csv
 .vercel
+.env*.local
