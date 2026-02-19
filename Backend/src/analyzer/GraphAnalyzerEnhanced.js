@@ -916,7 +916,7 @@ export class GraphAnalyzerEnhanced {
         }
       }
 
-      if (component.length > 0) {
+      if (component.length >= 3) {
         rings.push({
           ring_id: `RING-${String(ringIdCounter).padStart(3, '0')}`,
           member_accounts: component.sort(),
@@ -944,6 +944,11 @@ export class GraphAnalyzerEnhanced {
     
     if (louvainRings && Array.isArray(louvainRings)) {
       for (const louvainRing of louvainRings) {
+        // Skip rings with less than 3 members
+        if (!louvainRing.members || louvainRing.members.length < 3) {
+          continue;
+        }
+        
         // Check if this ring overlaps significantly with existing rings
         const isNewRing = !connectivityRings.some(existingRing => {
           const overlap = louvainRing.members.filter(m => 
