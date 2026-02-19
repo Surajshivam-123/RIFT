@@ -651,6 +651,25 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
   const totalFlags = fraudData?.summary?.suspicious_accounts_flagged || 0;
   const totalRings = fraudData?.summary?.fraud_rings_detected || 0;
 
+  // Download JSON function
+  const downloadJSON = () => {
+    if (!fraudData) {
+      alert('No fraud analysis data available to download');
+      return;
+    }
+
+    const dataStr = JSON.stringify(fraudData, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `fraud-analysis-${fileName || 'results'}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "white", fontFamily: "'Fira Code', monospace" }}>
 
@@ -681,6 +700,7 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
             <div style={{ width: 7, height: 7, borderRadius: "50%", background: hasData ? "#4ade80" : "#166534", boxShadow: hasData ? "0 0 8px #4ade80" : "none" }} />
             <span style={{ color: hasData ? "#4ade80" : "#166534", fontSize: 10 }}>{hasData ? "ACTIVE" : "IDLE"}</span>
           </div>
+          {fraudData && <Button outline success rounded onClick={downloadJSON}>Download JSON</Button>}
           <Button outline success rounded onClick={() => onNavigate("details")}>Show Details</Button>
           <Button outline secondary rounded onClick={() => onNavigate("addfile")}>Add File</Button>
         </div>

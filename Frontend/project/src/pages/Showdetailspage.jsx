@@ -45,6 +45,25 @@ export default function ShowDetailsPage({ selectedIds = new Set(), onNavigate })
 
   const hasSelection = selectedIds.size > 0;
 
+  // Download JSON function
+  const downloadJSON = () => {
+    if (!fraudData) {
+      alert('No fraud analysis data available to download');
+      return;
+    }
+
+    const dataStr = JSON.stringify(fraudData, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `fraud-analysis-${fileName || 'results'}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Build fraud maps from backend data
   const { ringColorMap, suspiciousMap, accountRingMap } = useMemo(() => {
     const ringColorMap   = {};
@@ -157,6 +176,7 @@ export default function ShowDetailsPage({ selectedIds = new Set(), onNavigate })
           {fileName && <span style={{ color: "#4ade80", fontSize: 10 }}>· 📄 {fileName}</span>}
         </div>
         <div style={{ display: "flex", gap: 10 }}>
+          {fraudData && <Button outline success rounded onClick={downloadJSON}>Download JSON</Button>}
           <Button outline success rounded onClick={() => onNavigate("graph")}>View Graph</Button>
           <Button outline secondary rounded onClick={() => onNavigate("addfile")}>Add File</Button>
         </div>
