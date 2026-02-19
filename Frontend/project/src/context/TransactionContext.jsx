@@ -1,8 +1,11 @@
 import { createContext, useState, useCallback } from "react";
 import Papa from "papaparse";
 
+// Backend API URL
+const API_URL = "http://localhost:3001";
+
 // ─── 1. Create the context ───────────────────────────────────────────────────
-const TransactionContext = createContext(null);
+export const TransactionContext = createContext(null);
 
 // ─── 2. Helper: turn raw CSV rows into nodes + edges ────────────────────────
 /*
@@ -88,23 +91,24 @@ export function TransactionProvider({ children }) {
   const [fileName,     setFileName]     = useState("");
   const [error,        setError]        = useState("");
   const [loading,      setLoading]      = useState(false);
+  const [fraudData,    setFraudData]    = useState(null); // Backend fraud analysis results
 
   // Called when the user picks a CSV file
-  const loadCSV = useCallback((file) => {
+  const loadCSV = useCallback(async (file) => {
     if (!file) return;
     setLoading(true);
     setError("");
     setFileName(file.name);
 
+    // First, parse CSV locally for graph visualization
     Papa.parse(file, {
-      header: true,          // first row = column names
+      header: true,
       skipEmptyLines: true,
       trimHeaders: true,
-      complete: (result) => {
-        // PapaParse puts rows in result.data
+      complete: async (result) => {
         const rows = result.data;
 
-        // Basic validation: make sure expected columns exist
+        // Basic validation
         const required = ["transaction_id", "sender_id", "receiver_id", "amount", "timestamp"];
         const headers  = Object.keys(rows[0] || {});
         const missing  = required.filter((c) => !headers.includes(c));
@@ -121,6 +125,33 @@ export function TransactionProvider({ children }) {
         setNodes(graph.nodes);
         setEdges(graph.edges);
         setNodeMap(graph.nodeMap);
+
+        // Now send to backend for fraud analysis
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const response = await fetch(`${API_URL}/api/analyze`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            throw new Error(`Backend error: ${response.statusText}`);
+          }
+
+          const result = await response.json();
+          
+          if (result.success) {
+            setFraudData(result.data);
+          } else {
+            setError(result.error || 'Failed to analyze fraud patterns');
+          }
+        } catch (err) {
+          console.error('Backend analysis error:', err);
+          setError(`Backend analysis failed: ${err.message}. Make sure backend server is running on port 3001.`);
+        }
+
         setLoading(false);
       },
       error: (err) => {
@@ -132,10 +163,11 @@ export function TransactionProvider({ children }) {
 
   const value = {
     // data
-    transactions, // raw rows — if you ever need them
-    nodes,        // [{ id, x, y, sentCount, receivedCount, totalSent, totalReceived }]
-    edges,        // [{ id, source, target, amount, timestamp }]
-    nodeMap,      // { accountId: nodeObject }  — O(1) lookup
+    transactions,
+    nodes,
+    edges,
+    nodeMap,
+    fraudData,    // NEW: fraud detection results from backend
     // meta
     fileName,
     error,

@@ -14,7 +14,7 @@ import { useTransactions } from "../hooks/useTransactions";
 import Button from "../components/Button";
 
 export default function AddFilePage({ onNavigate }) {
-  const { loadCSV, fileName, nodes, edges, loading, error } = useTransactions();
+  const { loadCSV, fileName, nodes, edges, fraudData, loading, error } = useTransactions();
   const fileRef = useRef(null);
   const hasFile = !!fileName;
 
@@ -164,13 +164,20 @@ export default function AddFilePage({ onNavigate }) {
 
           {/* Stats shown after load */}
           {hasFile && !loading && (
-            <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 6 }}>
-              <span style={{ fontSize: 10, color: "#15803d" }}>
-                <b style={{ color: "#14532d" }}>{nodes.length}</b> nodes
-              </span>
-              <span style={{ fontSize: 10, color: "#15803d" }}>
-                <b style={{ color: "#14532d" }}>{edges.length}</b> edges
-              </span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+              <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+                <span style={{ fontSize: 10, color: "#15803d" }}>
+                  <b style={{ color: "#14532d" }}>{nodes.length}</b> nodes
+                </span>
+                <span style={{ fontSize: 10, color: "#15803d" }}>
+                  <b style={{ color: "#14532d" }}>{edges.length}</b> edges
+                </span>
+              </div>
+              {fraudData && (
+                <div style={{ fontSize: 9, color: "#dc2626", fontWeight: 700 }}>
+                  ⚠️ {fraudData.summary.suspicious_accounts_flagged} suspicious accounts detected
+                </div>
+              )}
             </div>
           )}
         </div>

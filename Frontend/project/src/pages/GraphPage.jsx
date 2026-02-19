@@ -13,11 +13,9 @@
  *   Normal → green
  */
 
-import { useEffect, useRef, useState } from "react";
-import * as d3 from "d3-force";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useTransactions } from "../hooks/useTransactions";
 import Button from "../components/Button";
-import fraudAnalysis from "../data/fraudAnalysis.json";
 
 // ─── Physics constants (D3 handles forces now — these are unused) ─────────────
 const NODE_R_NORMAL     = 38;
@@ -37,41 +35,39 @@ const NORMAL_COLOR = { node: "#16a34a", stroke: "#bbf7d0" };
 
 // ─── Build lookup maps ────────────────────────────────────────────────────────
 function buildFraudMaps(analysis) {
+  if (!analysis) {
+    return { ringColorMap: {}, suspiciousMap: {}, accountRingMap: {} };
+  }
   const ringColorMap = {};
-  analysis.fraud_rings.forEach((ring, i) => {
+  (analysis.fraud_rings || []).forEach((ring, i) => {
     ringColorMap[ring.ring_id] = RING_PALETTE[i % RING_PALETTE.length];
   });
   const suspiciousMap = {};
-  analysis.suspicious_accounts.forEach(a => {
+  (analysis.suspicious_accounts || []).forEach(a => {
     suspiciousMap[a.account_id] = a;
   });
   const accountRingMap = {};
-  analysis.fraud_rings.forEach(ring => {
+  (analysis.fraud_rings || []).forEach(ring => {
     ring.member_accounts.forEach(id => { accountRingMap[id] = ring; });
   });
   return { ringColorMap, suspiciousMap, accountRingMap };
 }
 
-const { ringColorMap, suspiciousMap, accountRingMap } = buildFraudMaps(fraudAnalysis);
-
-function getNodeR(id) {
-  return suspiciousMap[id] ? NODE_R_SUSPICIOUS : NODE_R_NORMAL;
-}
-
-function getNodeColors(id) {
-  const ring = accountRingMap[id];
-  const susp = suspiciousMap[id];
-  if (ring)       return { fill: ringColorMap[ring.ring_id].node, stroke: ringColorMap[ring.ring_id].stroke };
-  if (susp)       return { fill: SOLO_COLOR.node,   stroke: SOLO_COLOR.stroke };
-  return              { fill: NORMAL_COLOR.node, stroke: NORMAL_COLOR.stroke };
-}
-
 // ─── Core DOM paint function — called every RAF tick ─────────────────────────
 // Takes refs (not state) so it never triggers re-renders
-function paintGraph(bodies, springs, edgeMids, selectedIdsRef, highlightedRingIdRef, activeEdgeIdxRef) {
+function paintGraph(bodies, springs, edgeMids, selectedIdsRef, highlightedRingIdRef, activeEdgeIdxRef, fraudMaps) {
   const selectedIds      = selectedIdsRef.current;
   const highlightedRingId = highlightedRingIdRef.current;
   const activeIdx        = activeEdgeIdxRef.current;
+  const { ringColorMap, suspiciousMap, accountRingMap } = fraudMaps;
+
+  const getNodeColors = (id) => {
+    const ring = accountRingMap[id];
+    const susp = suspiciousMap[id];
+    if (ring) return { fill: ringColorMap[ring.ring_id].node, stroke: ringColorMap[ring.ring_id].stroke };
+    if (susp) return { fill: SOLO_COLOR.node, stroke: SOLO_COLOR.stroke };
+    return { fill: NORMAL_COLOR.node, stroke: NORMAL_COLOR.stroke };
+  };
 
   // ── Paint nodes ────────────────────────────────────────────────────────────
   bodies.forEach((b, i) => {
@@ -132,39 +128,39 @@ function paintGraph(bodies, springs, edgeMids, selectedIdsRef, highlightedRingId
 
     if (i === activeIdx) {
       ep.setAttribute("stroke",           "#facc15");
-      ep.setAttribute("stroke-width",     "3");
+      ep.setAttribute("stroke-width",     "4");
       ep.setAttribute("opacity",          "1");
       ep.setAttribute("stroke-dasharray", "none");
       ep.setAttribute("marker-end",       "url(#arr-yellow)");
     } else if (sameRing && !dimmed) {
       const color = ringColorMap[srcRing.ring_id];
       ep.setAttribute("stroke",           color.edge);
-      ep.setAttribute("stroke-width",     "2.8");
+      ep.setAttribute("stroke-width",     "3.5");
       ep.setAttribute("opacity",          "1");
       ep.setAttribute("stroke-dasharray", "8 4");
       ep.setAttribute("marker-end",       `url(#arr-${srcRing.ring_id})`);
     } else if (dimmed) {
       ep.setAttribute("stroke",           "#16a34a");
-      ep.setAttribute("stroke-width",     "1");
+      ep.setAttribute("stroke-width",     "1.5");
       ep.setAttribute("opacity",          "0.06");
       ep.setAttribute("stroke-dasharray", "none");
       ep.setAttribute("marker-end",       "url(#arr-green)");
     } else if (selectedIds.has(srcId) && selectedIds.has(tgtId)) {
       ep.setAttribute("stroke",           "#4ade80");
-      ep.setAttribute("stroke-width",     "2.5");
+      ep.setAttribute("stroke-width",     "3.5");
       ep.setAttribute("opacity",          "1");
       ep.setAttribute("stroke-dasharray", "none");
       ep.setAttribute("marker-end",       "url(#arr-green)");
     } else if (selectedIds.has(srcId) || selectedIds.has(tgtId)) {
       ep.setAttribute("stroke",           "#16a34a");
-      ep.setAttribute("stroke-width",     "1.8");
+      ep.setAttribute("stroke-width",     "2.8");
       ep.setAttribute("opacity",          "1");
       ep.setAttribute("stroke-dasharray", "none");
       ep.setAttribute("marker-end",       "url(#arr-green)");
     } else {
       ep.setAttribute("stroke",           "#16a34a");
-      ep.setAttribute("stroke-width",     "1.2");
-      ep.setAttribute("opacity",          "0.18");
+      ep.setAttribute("stroke-width",     "2.5");
+      ep.setAttribute("opacity",          "0.3");
       ep.setAttribute("stroke-dasharray", "none");
       ep.setAttribute("marker-end",       "url(#arr-green)");
     }
@@ -173,7 +169,22 @@ function paintGraph(bodies, springs, edgeMids, selectedIdsRef, highlightedRingId
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function GraphPage({ onNavigate, onSelectionChange }) {
-  const { nodes, edges, loadCSV, fileName, loading, error } = useTransactions();
+  const { nodes, edges, loadCSV, fileName, loading, error, fraudData } = useTransactions();
+
+  // Build fraud maps from backend data
+  const fraudMaps = useMemo(() => buildFraudMaps(fraudData), [fraudData]);
+  const { ringColorMap, suspiciousMap, accountRingMap } = fraudMaps;
+
+  // Helper functions that use fraud maps
+  const getNodeR = (id) => suspiciousMap[id] ? NODE_R_SUSPICIOUS : NODE_R_NORMAL;
+  
+  const getNodeColors = (id) => {
+    const ring = accountRingMap[id];
+    const susp = suspiciousMap[id];
+    if (ring) return { fill: ringColorMap[ring.ring_id].node, stroke: ringColorMap[ring.ring_id].stroke };
+    if (susp) return { fill: SOLO_COLOR.node, stroke: SOLO_COLOR.stroke };
+    return { fill: NORMAL_COLOR.node, stroke: NORMAL_COLOR.stroke };
+  };
 
   const [selectedIds,       setSelectedIds]       = useState(new Set());
   const [edgeTooltip,       setEdgeTooltip]       = useState(null);
@@ -241,8 +252,9 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
     if (nodes.length === 0) return;
 
     const rect = wrapperRef.current?.getBoundingClientRect?.() ?? { width: 900, height: 600 };
-    const CW   = Math.max(600, rect.width);
-    const CH   = Math.max(400, rect.height);
+    // Increase canvas size to accommodate spread out nodes
+    const CW   = Math.max(1200, rect.width * 1.5);
+    const CH   = Math.max(800, rect.height * 1.5);
     svgEl.current?.setAttribute("width",   CW);
     svgEl.current?.setAttribute("height",  CH);
     svgEl.current?.setAttribute("viewBox", `0 0 ${CW} ${CH}`);
@@ -259,21 +271,24 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
     function makeArrow(id, color) {
       const m = document.createElementNS(NS, "marker");
       m.setAttribute("id",           id);
-      m.setAttribute("markerWidth",  "8");
-      m.setAttribute("markerHeight", "6");
-      m.setAttribute("refX",         "8");
-      m.setAttribute("refY",         "3");
+      m.setAttribute("markerWidth",  "20");
+      m.setAttribute("markerHeight", "20");
+      m.setAttribute("refX",         "18");
+      m.setAttribute("refY",         "10");
       m.setAttribute("orient",       "auto");
+      m.setAttribute("markerUnits",  "userSpaceOnUse");
       const p = document.createElementNS(NS, "polygon");
-      p.setAttribute("points", "0 0, 8 3, 0 6");
+      p.setAttribute("points", "0 0, 20 10, 0 20");
       p.setAttribute("fill",   color);
+      p.setAttribute("stroke", color);
+      p.setAttribute("stroke-width", "1.5");
       m.appendChild(p);
       defs.appendChild(m);
     }
     makeArrow("arr-green",  "#16a34a");
     makeArrow("arr-yellow", "#facc15");
-    fraudAnalysis.fraud_rings.forEach(ring => {
-      makeArrow(`arr-${ring.ring_id}`, ringColorMap[ring.ring_id].edge);
+    (fraudData?.fraud_rings || []).forEach(ring => {
+      makeArrow(`arr-${ring.ring_id}`, ringColorMap[ring.ring_id]?.edge || "#16a34a");
     });
     svgEl.current.insertBefore(defs, svgEl.current.firstChild);
 
@@ -304,15 +319,19 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
       if (degree[e.target]  !== undefined) degree[e.target]++;
     });
 
-    const cols  = Math.max(2, Math.ceil(Math.sqrt(nodes.length * (CW / CH))));
-    const PAD   = NODE_R_NORMAL * 5;
-    const cellW = (CW - PAD * 2) / cols;
-    const cellH = (CH - PAD * 2) / Math.ceil(nodes.length / cols);
+    // Calculate grid with more spacing for better visibility
+    const cols  = Math.max(3, Math.ceil(Math.sqrt(nodes.length * (CW / CH))));
+    const rows  = Math.ceil(nodes.length / cols);
+    const PAD   = NODE_R_SUSPICIOUS * 3;  // Padding from edges
+    const minCellW = NODE_R_SUSPICIOUS * 6;  // Minimum cell width for visibility
+    const minCellH = NODE_R_SUSPICIOUS * 6;  // Minimum cell height for visibility
+    const cellW = Math.max(minCellW, (CW - PAD * 2) / cols);
+    const cellH = Math.max(minCellH, (CH - PAD * 2) / rows);
 
     const bodies = nodes.map((n, i) => ({
       id: n.id,
-      x:  PAD + (i % cols) * cellW + cellW / 2 + (Math.random() - 0.5) * 20,
-      y:  PAD + Math.floor(i / cols) * cellH + cellH / 2 + (Math.random() - 0.5) * 20,
+      x:  PAD + (i % cols) * cellW + cellW / 2,
+      y:  PAD + Math.floor(i / cols) * cellH + cellH / 2,
     }));
 
     const idx = {};
@@ -338,7 +357,7 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
       p.id = `ep-${i}`;
       p.setAttribute("fill",         "none");
       p.setAttribute("stroke",       "#16a34a");
-      p.setAttribute("stroke-width", "1.2");
+      p.setAttribute("stroke-width", "2.5");
       p.setAttribute("marker-end",   "url(#arr-green)");
       p.setAttribute("opacity",      "0.18");
       layerEdges.current.appendChild(p);
@@ -379,7 +398,6 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
       pulse.setAttribute("stroke",       color.fill);
       pulse.setAttribute("stroke-width", "2");
       pulse.setAttribute("opacity",      susp ? "1" : "0");
-      pulse.style.animation = "pulse-ring 2s ease-out infinite";
       g.appendChild(pulse);
 
       // Main circle — color set here initially, repainted every tick by paintGraph
@@ -471,61 +489,65 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
       layerNText.current.appendChild(g);
     });
 
-    // ── D3 Force Simulation (replaces hand-rolled physics) ───────────────────
-    // D3 mutates bodies[i].x / .y directly — springs use object refs after init
-    const simulation = d3.forceSimulation(bodies)
-      .force("link",
-        d3.forceLink(springs)
-          .id(d => d.id)
-          .distance(d => {
-            const srcRing = accountRingMap[d.source?.id ?? d.source];
-            const tgtRing = accountRingMap[d.target?.id ?? d.target];
-            const sameRing = srcRing && tgtRing && srcRing.ring_id === tgtRing.ring_id;
-            return sameRing ? 160 : 60;
-          })
-          .strength(0.6)
-      )
-      .force("charge", d3.forceManyBody().strength(-1100))
-      .force("center",    d3.forceCenter(CW / 2, CH / 2))
-      .force("collision", d3.forceCollide().radius(d => getNodeR(d.id) + 32))
-      .alphaDecay(0.03)
-      .velocityDecay(0.35);
-
-    simulation.on("tick", () => {
-      bodies.forEach((b, i) => {
-        const t = `translate(${b.x.toFixed(1)},${b.y.toFixed(1)})`;
-        document.getElementById(`ng-${i}`)?.setAttribute("transform", t);
-        document.getElementById(`nt-${i}`)?.setAttribute("transform", t);
-      });
-
-      springs.forEach((s, i) => {
-        // After D3 link force runs, s.source / s.target are mutated to body objects
-        const a = s.source;
-        const b = s.target;
-        if (!a || !b || a.x == null) return;
-
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const curvature = 0.28;
-        const cx = a.x + dx / 2 - dy * curvature;
-        const cy = a.y + dy / 2 + dx * curvature;
-
-        // Store midpoint for click hit-testing
-        edgeMids.current[i] = { mx: cx, my: cy };
-
-        const pathData = `M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`;
-        document.getElementById(`ep-${i}`)?.setAttribute("d", pathData);
-        document.getElementById(`eh-${i}`)?.setAttribute("d", pathData);
-      });
-
-      paintGraph(
-        bodies, springs, edgeMids.current,
-        selectedIdsRef, highlightedRingIdRef, activeEdgeIdxRef
-      );
+    // ── Static Layout (no animation) ─────────────────────────────────────────
+    // Position nodes in initial grid layout
+    bodies.forEach((b, i) => {
+      const t = `translate(${b.x.toFixed(1)},${b.y.toFixed(1)})`;
+      document.getElementById(`ng-${i}`)?.setAttribute("transform", t);
+      document.getElementById(`nt-${i}`)?.setAttribute("transform", t);
     });
 
-    return () => { simulation.stop(); };
-  }, [nodes, edges]);
+    // Draw edges with static positions
+    springs.forEach((s, i) => {
+      const srcIdx = idx[s.source];
+      const tgtIdx = idx[s.target];
+      if (srcIdx === undefined || tgtIdx === undefined) return;
+
+      const a = bodies[srcIdx];
+      const b = bodies[tgtIdx];
+
+      // Calculate edge direction and distance
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      
+      // Unit vector
+      const ux = dx / dist;
+      const uy = dy / dist;
+      
+      // Get node radii (accounting for suspicious nodes being larger)
+      const srcRadius = getNodeR(a.id);
+      const tgtRadius = getNodeR(b.id);
+      
+      // Calculate start and end points OUTSIDE the node circles
+      // Add extra padding so arrow is clearly visible
+      const arrowPadding = 20; // Extra space for arrow visibility
+      const startX = a.x + ux * (srcRadius + 8);
+      const startY = a.y + uy * (srcRadius + 8);
+      const endX = b.x - ux * (tgtRadius + arrowPadding);
+      const endY = b.y - uy * (tgtRadius + arrowPadding);
+
+      // Calculate curve control point
+      const curvature = 0.28;
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+      const cx = midX - (endY - startY) * curvature;
+      const cy = midY + (endX - startX) * curvature;
+
+      // Store midpoint for click hit-testing
+      edgeMids.current[i] = { mx: cx, my: cy };
+
+      const pathData = `M${startX.toFixed(1)},${startY.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${endX.toFixed(1)},${endY.toFixed(1)}`;
+      document.getElementById(`ep-${i}`)?.setAttribute("d", pathData);
+      document.getElementById(`eh-${i}`)?.setAttribute("d", pathData);
+    });
+
+    // Apply initial colors
+    paintGraph(
+      bodies, springs, edgeMids.current,
+      selectedIdsRef, highlightedRingIdRef, activeEdgeIdxRef, fraudMaps
+    );
+  }, [nodes, edges, fraudMaps]);
 
   // ── Click handler (accounts for zoom/pan) ────────────────────────────────
   function handleSvgClick(e) {
@@ -626,8 +648,8 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
   }
 
   const hasData    = nodes.length > 0;
-  const totalFlags = fraudAnalysis.summary.suspicious_accounts_flagged;
-  const totalRings = fraudAnalysis.summary.fraud_rings_detected;
+  const totalFlags = fraudData?.summary?.suspicious_accounts_flagged || 0;
+  const totalRings = fraudData?.summary?.fraud_rings_detected || 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "white", fontFamily: "'Fira Code', monospace" }}>
@@ -714,10 +736,10 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
           {/* ── Fraud rings panel ─────────────────────────────────────── */}
           <div style={{ flexShrink: 0, padding: 12, background: "#fff7ed", overflowY: "auto", maxHeight: 260 }}>
             <p style={{ fontSize: 9, letterSpacing: "0.18em", color: "#c2410c", marginBottom: 10, textTransform: "uppercase", fontWeight: 700 }}>
-              ⚠ Fraud Rings ({fraudAnalysis.fraud_rings.length})
+              ⚠ Fraud Rings ({fraudData?.fraud_rings?.length || 0})
             </p>
 
-            {fraudAnalysis.fraud_rings.map((ring, ri) => {
+            {(fraudData?.fraud_rings || []).map((ring, ri) => {
               const color    = RING_PALETTE[ri % RING_PALETTE.length];
               const isActive = highlightedRingId === ring.ring_id;
               return (
@@ -734,17 +756,17 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
                     <span style={{ textTransform: "uppercase", letterSpacing: "0.08em", background: color.node + "22", color: color.node, padding: "1px 5px", borderRadius: 3, fontWeight: 700 }}>{ring.pattern_type}</span>
                     <span style={{ marginLeft: 5 }}>{ring.member_accounts.length} members</span>
                   </div>
-                  <div style={{ fontSize: 8, color: "#a8a29e" }}>₹{(ring.total_amount_cycled).toLocaleString("en-IN")} cycled</div>
+                  {ring.total_amount_cycled && <div style={{ fontSize: 8, color: "#a8a29e" }}>₹{ring.total_amount_cycled.toLocaleString("en-IN")} cycled</div>}
                   {isActive && <div style={{ marginTop: 5, fontSize: 8, color: color.node, fontWeight: 600 }}>✓ Isolated · click to clear</div>}
                 </div>
               );
             })}
 
             {/* Solo suspicious */}
-            {fraudAnalysis.suspicious_accounts.filter(a => !a.ring_id).length > 0 && (
+            {(fraudData?.suspicious_accounts || []).filter(a => !a.ring_id).length > 0 && (
               <div style={{ borderTop: "1px solid #fed7aa", paddingTop: 8, marginTop: 4 }}>
                 <p style={{ fontSize: 8, color: "#c2410c", letterSpacing: "0.1em", marginBottom: 6 }}>SOLO FLAGGED</p>
-                {fraudAnalysis.suspicious_accounts.filter(a => !a.ring_id).map(a => (
+                {(fraudData?.suspicious_accounts || []).filter(a => !a.ring_id).map(a => (
                   <div key={a.account_id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 6px", borderRadius: 5, background: "#fef2f2", marginBottom: 3, border: "1px solid #fecaca" }}>
                     <span style={{ fontSize: 9, color: "#991b1b", fontWeight: 700 }}>{a.account_id}</span>
                     <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 700 }}>{a.suspicion_score}%</span>
@@ -781,8 +803,8 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
           {hasData && (
             <div style={{ position: "absolute", bottom: 14, left: 14, display: "flex", flexWrap: "wrap", gap: 7, zIndex: 5, pointerEvents: "none", maxWidth: 500 }}>
               <LegendBubble color={NORMAL_COLOR.node} label="Normal" />
-              {fraudAnalysis.fraud_rings.map((ring, i) => (
-                <LegendBubble key={ring.ring_id} color={RING_PALETTE[i].node} label={`${ring.ring_id} · ${ring.pattern_type}`} />
+              {(fraudData?.fraud_rings || []).map((ring, i) => (
+                <LegendBubble key={ring.ring_id} color={RING_PALETTE[i % RING_PALETTE.length].node} label={`${ring.ring_id} · ${ring.pattern_type}`} />
               ))}
               <LegendBubble color={SOLO_COLOR.node} label="Solo suspect" />
             </div>
@@ -830,7 +852,7 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
 
           {/* Node popup */}
           {nodePopup && (
-            <NodePopup nodePopup={nodePopup} style={getNodePopupPos()} onClose={() => setNodePopup(null)} />
+            <NodePopup nodePopup={nodePopup} ringColorMap={ringColorMap} style={getNodePopupPos()} onClose={() => setNodePopup(null)} />
           )}
 
           {/* Edge tooltip */}
@@ -868,6 +890,9 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
           selectedIds={selectedIds}
           nodes={nodes}
           edges={edges}
+          accountRingMap={accountRingMap}
+          suspiciousMap={suspiciousMap}
+          getNodeColors={getNodeColors}
           onClose={() => {
             setSelectedIds(new Set());
             selectedIdsRef.current = new Set();
@@ -880,11 +905,6 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse-ring {
-          0%   { transform: scale(1);    opacity: 0.9; }
-          70%  { transform: scale(1.4);  opacity: 0;   }
-          100% { transform: scale(1.4);  opacity: 0;   }
-        }
       `}</style>
     </div>
   );
@@ -901,7 +921,7 @@ function LegendBubble({ color, label }) {
   );
 }
 
-function NodePopup({ nodePopup, style, onClose }) {
+function NodePopup({ nodePopup, ringColorMap, style, onClose }) {
   const { id, suspicious, ring } = nodePopup;
   const ringColor = ring ? ringColorMap[ring.ring_id] : null;
   const headerBg  = ringColor ? ringColor.node : suspicious ? "#7f1d1d" : "#14532d";
@@ -961,7 +981,7 @@ function NodePopup({ nodePopup, style, onClose }) {
   );
 }
 
-function DetailPanel({ selectedIds, nodes, edges, onClose }) {
+function DetailPanel({ selectedIds, nodes, edges, accountRingMap, suspiciousMap, getNodeColors, onClose }) {
   if (selectedIds.size === 0) return null;
   const selectedNodes = nodes.filter(n => selectedIds.has(n.id));
   const sent          = edges.filter(e => selectedIds.has(e.source));
