@@ -123,8 +123,8 @@ export class CSVParser {
       throw new ValidationError(`Invalid amount: ${amount} must be positive`);
     }
 
-    // Validate timestamp format (YYYY-MM-DD HH:MM:SS)
-    const timestampRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+    // Validate timestamp format (YYYY-MM-DD HH:MM:SS or YYYY-MM-DD H:MM:SS)
+    const timestampRegex = /^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}:\d{2}$/;
     if (!timestampRegex.test(record.timestamp)) {
       throw new ValidationError(
         `Invalid timestamp format: '${record.timestamp}' does not match required format YYYY-MM-DD HH:MM:SS`
@@ -172,13 +172,16 @@ export class CSVParser {
 
   /**
    * Parse timestamp string to Date object
-   * @param {string} timestampStr - Timestamp string in format YYYY-MM-DD HH:MM:SS
+   * @param {string} timestampStr - Timestamp string in format YYYY-MM-DD HH:MM:SS or YYYY-MM-DD H:MM:SS
    * @returns {Date} Date object
    * @private
    */
   _parseTimestamp(timestampStr) {
+    // Normalize timestamp to ensure 2-digit hours (e.g., "3:01:00" -> "03:01:00")
+    const normalized = timestampStr.replace(/(\d{4}-\d{2}-\d{2}) (\d):/, '$1 0$2:');
+    
     // Replace space with 'T' for ISO format compatibility
-    const isoString = timestampStr.replace(' ', 'T');
+    const isoString = normalized.replace(' ', 'T');
     return new Date(isoString);
   }
 }
