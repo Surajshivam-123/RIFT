@@ -23,9 +23,8 @@
 import { useState, useMemo } from "react";
 import { useTransactions } from "../hooks/useTransactions";
 import Button from "../components/Button";
-import fraudAnalysis from "../data/fraudAnalysis.json";
 
-// ─── Fraud maps (same as GraphPage) ──────────────────────────────────────────
+// ─── Fraud maps ──────────────────────────────────────────────────────────────
 const RING_PALETTE = [
   { node: "#dc2626", stroke: "#fca5a5", label: "#fca5a5" },
   { node: "#ea580c", stroke: "#fdba74", label: "#fdba74" },
@@ -34,33 +33,41 @@ const RING_PALETTE = [
   { node: "#be185d", stroke: "#f9a8d4", label: "#f9a8d4" },
 ];
 
-const ringColorMap   = {};
-const suspiciousMap  = {};
-const accountRingMap = {};
-fraudAnalysis.fraud_rings.forEach((ring, i) => {
-  ringColorMap[ring.ring_id] = RING_PALETTE[i % RING_PALETTE.length];
-  ring.member_accounts.forEach(id => { accountRingMap[id] = ring; });
-});
-fraudAnalysis.suspicious_accounts.forEach(a => { suspiciousMap[a.account_id] = a; });
-
-function getNodeColor(id) {
-  const ring = accountRingMap[id];
-  const susp = suspiciousMap[id];
-  if (ring) return ringColorMap[ring.ring_id].node;
-  if (susp) return "#991b1b";
-  return "#16a34a";
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function ShowDetailsPage({ selectedIds = new Set(), onNavigate }) {
-  const { nodes, edges, fileName } = useTransactions();
+  const { nodes, edges, fileName, fraudData } = useTransactions();
 
-  const [activeTab,     setActiveTab]     = useState("summary");     // "summary" | "transactions"
-  const [filterAccount, setFilterAccount] = useState("all");         // account ID or "all"
-  const [sortKey,       setSortKey]       = useState("date");        // "date" | "amount" | "sender" | "receiver"
-  const [sortDir,       setSortDir]       = useState("desc");        // "asc" | "desc"
+  const [activeTab,     setActiveTab]     = useState("summary");
+  const [filterAccount, setFilterAccount] = useState("all");
+  const [sortKey,       setSortKey]       = useState("date");
+  const [sortDir,       setSortDir]       = useState("desc");
 
   const hasSelection = selectedIds.size > 0;
+
+  // Build fraud maps from backend data
+  const { ringColorMap, suspiciousMap, accountRingMap } = useMemo(() => {
+    const ringColorMap   = {};
+    const suspiciousMap  = {};
+    const accountRingMap = {};
+    
+    if (fraudData) {
+      fraudData.fraud_rings?.forEach((ring, i) => {
+        ringColorMap[ring.ring_id] = RING_PALETTE[i % RING_PALETTE.length];
+        ring.member_accounts.forEach(id => { accountRingMap[id] = ring; });
+      });
+      fraudData.suspicious_accounts?.forEach(a => { suspiciousMap[a.account_id] = a; });
+    }
+    
+    return { ringColorMap, suspiciousMap, accountRingMap };
+  }, [fraudData]);
+
+  function getNodeColor(id) {
+    const ring = accountRingMap[id];
+    const susp = suspiciousMap[id];
+    if (ring) return ringColorMap[ring.ring_id].node;
+    if (susp) return "#991b1b";
+    return "#16a34a";
+  }
 
   // Accounts to show in summary (selected, or all)
   const accountIds = hasSelection ? [...selectedIds] : nodes.map(n => n.id);
