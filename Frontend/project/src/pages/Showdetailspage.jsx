@@ -41,6 +41,7 @@ export default function ShowDetailsPage({ selectedIds = new Set(), onNavigate })
   const [filterAccount, setFilterAccount] = useState("all");
   const [sortKey,       setSortKey]       = useState("date");
   const [sortDir,       setSortDir]       = useState("desc");
+  const [ringSort,      setRingSort]      = useState("risk_score");
 
   const hasSelection = selectedIds.size > 0;
 
@@ -111,6 +112,19 @@ export default function ShowDetailsPage({ selectedIds = new Set(), onNavigate })
 
   const totalAmount = visibleEdges.reduce((s, e) => s + e.amount, 0);
 
+  // Sorted fraud rings
+  const sortedRings = useMemo(() => {
+    if (!fraudData?.fraud_rings) return [];
+    const rings = [...fraudData.fraud_rings];
+    rings.sort((a, b) => {
+      if (ringSort === "risk_score") return b.risk_score - a.risk_score;
+      if (ringSort === "member_count") return b.member_accounts.length - a.member_accounts.length;
+      if (ringSort === "ring_id") return a.ring_id.localeCompare(b.ring_id);
+      return 0;
+    });
+    return rings;
+  }, [fraudData, ringSort]);
+
   function handleSortClick(key) {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("desc"); }
@@ -152,6 +166,7 @@ export default function ShowDetailsPage({ selectedIds = new Set(), onNavigate })
       <div style={{ flexShrink: 0, background: "#f0fdf4", borderBottom: "2px solid #dcfce7", display: "flex", alignItems: "stretch", padding: "0 22px", gap: 4 }}>
         {[
           { key: "summary",      label: "Account Summary",  count: accountIds.length },
+          { key: "rings",        label: "Fraud Rings",      count: fraudData?.fraud_rings?.length || 0 },
           { key: "transactions", label: "Transactions",     count: visibleEdges.length },
         ].map(tab => (
           <button
@@ -310,6 +325,179 @@ export default function ShowDetailsPage({ selectedIds = new Set(), onNavigate })
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* ══ FRAUD RINGS TAB ══════════════════════════════════════════════ */}
+        <div style={{
+          position: "absolute", inset: 0,
+          opacity:    activeTab === "rings" ? 1 : 0,
+          pointerEvents: activeTab === "rings" ? "auto" : "none",
+          transform: activeTab === "rings" ? "translateX(0)" : "translateX(-18px)",
+          transition: "opacity 0.2s ease, transform 0.2s ease",
+          display: "flex", flexDirection: "column",
+          overflow: "hidden",
+        }}>
+
+          {/* Sort controls */}
+          <div style={{ flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 22px", background: "#f0fdf4", borderBottom: "1px solid #dcfce7" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#14532d", letterSpacing: "0.1em" }}>
+              {sortedRings.length} FRAUD RING{sortedRings.length !== 1 ? "S" : ""} DETECTED
+            </span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 9, color: "#6b7280" }}>Sort by:</span>
+              {[
+                { key: "risk_score", label: "Risk Score" },
+                { key: "member_count", label: "Members" },
+                { key: "ring_id", label: "Ring ID" },
+              ].map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setRingSort(opt.key)}
+                  style={{
+                    background: ringSort === opt.key ? "#16a34a" : "white",
+                    color: ringSort === opt.key ? "white" : "#6b7280",
+                    border: `1px solid ${ringSort === opt.key ? "#16a34a" : "#d1d5db"}`,
+                    borderRadius: 6,
+                    padding: "4px 10px",
+                    fontSize: 9,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "'Fira Code', monospace",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Table container */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px" }}>
+            {sortedRings.length === 0 && (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#9ca3af", fontSize: 12 }}>
+                No fraud rings detected in the current dataset.
+              </div>
+            )}
+
+            {sortedRings.length > 0 && (
+              <div style={{ background: "white", borderRadius: 12, border: "2px solid #dcfce7", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                {/* Table header */}
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "120px 140px 100px 110px 1fr",
+                  gap: "0 12px",
+                  padding: "12px 18px",
+                  background: "#14532d",
+                  fontSize: 8,
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  color: "#86efac",
+                }}>
+                  <span>RING ID</span>
+                  <span>PATTERN TYPE</span>
+                  <span style={{ textAlign: "center" }}>MEMBERS</span>
+                  <span style={{ textAlign: "right" }}>RISK SCORE</span>
+                  <span>MEMBER ACCOUNT IDs</span>
+                </div>
+
+                {/* Table rows */}
+                {sortedRings.map((ring, i) => {
+                  const ringColor = ringColorMap[ring.ring_id] || RING_PALETTE[0];
+                  
+                  return (
+                    <div
+                      key={ring.ring_id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "120px 140px 100px 110px 1fr",
+                        gap: "0 12px",
+                        padding: "14px 18px",
+                        borderBottom: i < sortedRings.length - 1 ? "1px solid #f3f4f6" : "none",
+                        background: i % 2 === 0 ? "white" : "#fafffe",
+                        alignItems: "center",
+                        transition: "background 0.1s",
+                      }}
+                      onMouseEnter={el => el.currentTarget.style.background = "#f0fdf4"}
+                      onMouseLeave={el => el.currentTarget.style.background = i % 2 === 0 ? "white" : "#fafffe"}
+                    >
+                      {/* Ring ID */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ width: 10, height: 10, borderRadius: "50%", background: ringColor.node, flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, fontWeight: 800, color: ringColor.node }}>{ring.ring_id}</span>
+                      </div>
+
+                      {/* Pattern Type */}
+                      <div style={{ background: ringColor.node + "15", border: `1px solid ${ringColor.node}40`, borderRadius: 6, padding: "4px 10px", display: "inline-block" }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: ringColor.node, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          {ring.pattern_type.replace(/_/g, " ")}
+                        </span>
+                      </div>
+
+                      {/* Member Count */}
+                      <div style={{ textAlign: "center" }}>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: "#111827" }}>{ring.member_accounts.length}</span>
+                      </div>
+
+                      {/* Risk Score */}
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ 
+                          display: "inline-block",
+                          background: ring.risk_score >= 90 ? "#dc2626" : ring.risk_score >= 70 ? "#ea580c" : "#f59e0b",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                        }}>
+                          <span style={{ fontSize: 14, fontWeight: 900, color: "white" }}>{ring.risk_score.toFixed(1)}</span>
+                        </div>
+                      </div>
+
+                      {/* Member Account IDs */}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                        {ring.member_accounts.map(accId => (
+                          <span
+                            key={accId}
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 600,
+                              background: ringColor.node + "20",
+                              color: ringColor.node,
+                              border: `1px solid ${ringColor.node}50`,
+                              borderRadius: 5,
+                              padding: "3px 8px",
+                            }}
+                          >
+                            {accId}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Summary stats */}
+            {sortedRings.length > 0 && (
+              <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+                <div style={{ background: "white", border: "2px solid #dcfce7", borderRadius: 10, padding: "14px 16px" }}>
+                  <p style={{ fontSize: 8, color: "#9ca3af", letterSpacing: "0.12em", marginBottom: 6 }}>TOTAL RINGS</p>
+                  <p style={{ fontSize: 24, fontWeight: 900, color: "#dc2626" }}>{sortedRings.length}</p>
+                </div>
+                <div style={{ background: "white", border: "2px solid #dcfce7", borderRadius: 10, padding: "14px 16px" }}>
+                  <p style={{ fontSize: 8, color: "#9ca3af", letterSpacing: "0.12em", marginBottom: 6 }}>TOTAL MEMBERS</p>
+                  <p style={{ fontSize: 24, fontWeight: 900, color: "#ea580c" }}>
+                    {sortedRings.reduce((sum, r) => sum + r.member_accounts.length, 0)}
+                  </p>
+                </div>
+                <div style={{ background: "white", border: "2px solid #dcfce7", borderRadius: 10, padding: "14px 16px" }}>
+                  <p style={{ fontSize: 8, color: "#9ca3af", letterSpacing: "0.12em", marginBottom: 6 }}>AVG RISK SCORE</p>
+                  <p style={{ fontSize: 24, fontWeight: 900, color: "#7c3aed" }}>
+                    {(sortedRings.reduce((sum, r) => sum + r.risk_score, 0) / sortedRings.length).toFixed(1)}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

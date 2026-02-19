@@ -27,17 +27,31 @@ export class JSONFormatter {
         detected_patterns: [...account.detected_patterns],
         ring_id: account.ring_id
       })),
-      fraud_rings: fraudRings.map(ring => ({
-        ring_id: ring.ring_id,
-        member_accounts: [...ring.member_accounts],
-        pattern_type: ring.pattern_type,
-        risk_score: parseFloat(ring.risk_score.toFixed(1))
-      })),
+      fraud_rings: fraudRings.map(ring => {
+        const ringData = {
+          ring_id: ring.ring_id,
+          member_accounts: [...ring.member_accounts],
+          pattern_type: ring.pattern_type,
+          risk_score: parseFloat((ring.risk_score || 0).toFixed(1))
+        };
+        
+        // Add optional fields if present
+        if (ring.detection_method) ringData.detection_method = ring.detection_method;
+        if (ring.louvain_score) ringData.louvain_score = ring.louvain_score;
+        if (ring.louvain_pattern) ringData.louvain_pattern = ring.louvain_pattern;
+        if (ring.density) ringData.density = ring.density;
+        if (ring.central_beneficiaries) ringData.central_beneficiaries = ring.central_beneficiaries;
+        
+        return ringData;
+      }),
       summary: {
         total_accounts_analyzed: summary.total_accounts_analyzed,
         suspicious_accounts_flagged: summary.suspicious_accounts_flagged,
         fraud_rings_detected: summary.fraud_rings_detected,
-        processing_time_seconds: parseFloat(summary.processing_time_seconds.toFixed(1))
+        processing_time_seconds: parseFloat(summary.processing_time_seconds.toFixed(1)),
+        cycles_detected: summary.cycles_detected || 0,
+        louvain_smurfing_rings_detected: summary.louvain_smurfing_rings_detected || 0,
+        patterns_analyzed: summary.patterns_analyzed || 0
       }
     };
 

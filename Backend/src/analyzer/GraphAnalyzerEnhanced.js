@@ -87,6 +87,9 @@ export class GraphAnalyzerEnhanced {
     const smurfingPatterns = this.detectSmurfingPatterns();
     const washTrading = this.detectWashTrading();
     
+    console.log('Pattern detection: Louvain community detection...');
+    const smurfingRingsLouvain = this.detectSmurfingRingsLouvain();
+    
     const patterns = {
       // Original patterns (optimized)
       cycles,
@@ -118,7 +121,10 @@ export class GraphAnalyzerEnhanced {
       moneyLaunderingChains,
       coordinatedBehavior,
       smurfingPatterns,
-      washTrading
+      washTrading,
+      
+      // Louvain community detection (industry-standard)
+      smurfingRingsLouvain
     };
     
     const endTime = Date.now();
@@ -915,13 +921,69 @@ export class GraphAnalyzerEnhanced {
           ring_id: `RING-${String(ringIdCounter).padStart(3, '0')}`,
           member_accounts: component.sort(),
           pattern_type: this._classifyRingPattern(component),
-          risk_score: 0
+          detection_method: 'connectivity_analysis'
         });
         ringIdCounter++;
       }
     }
 
     return rings;
+  }
+
+  /**
+   * Enhanced fraud ring identification that includes Louvain-detected rings
+   * This combines traditional connectivity analysis with Louvain community detection
+   */
+  identifyFraudRingsEnhanced(suspiciousAccounts, louvainRings) {
+    // Get traditional connectivity-based rings
+    const connectivityRings = this.identifyFraudRings(suspiciousAccounts);
+    
+    // Add Louvain-detected rings
+    const allRings = [...connectivityRings];
+    let ringIdCounter = connectivityRings.length + 1;
+    
+    if (louvainRings && Array.isArray(louvainRings)) {
+      for (const louvainRing of louvainRings) {
+        // Check if this ring overlaps significantly with existing rings
+        const isNewRing = !connectivityRings.some(existingRing => {
+          const overlap = louvainRing.members.filter(m => 
+            existingRing.member_accounts.includes(m)
+          ).length;
+          const overlapRatio = overlap / Math.min(louvainRing.members.length, existingRing.member_accounts.length);
+          return overlapRatio > 0.7; // 70% overlap = same ring
+        });
+        
+        if (isNewRing) {
+          allRings.push({
+            ring_id: `RING-${String(ringIdCounter).padStart(3, '0')}`,
+            member_accounts: louvainRing.members.sort(),
+            pattern_type: this._mapLouvainPatternType(louvainRing.pattern),
+            detection_method: 'louvain_community_detection',
+            louvain_score: louvainRing.smurfingScore,
+            louvain_pattern: louvainRing.pattern,
+            density: louvainRing.density,
+            central_beneficiaries: louvainRing.centralBeneficiaries
+          });
+          ringIdCounter++;
+        }
+      }
+    }
+    
+    return allRings;
+  }
+
+  /**
+   * Map Louvain pattern types to traditional ring pattern types
+   */
+  _mapLouvainPatternType(louvainPattern) {
+    const mapping = {
+      'SINGLE_BENEFICIARY_SMURFING': 'smurfing',
+      'MULTI_BENEFICIARY_RING': 'smurfing',
+      'COORDINATED_BURST_SMURFING': 'smurfing',
+      'STRUCTURED_SMURFING': 'smurfing',
+      'DISTRIBUTED_SMURFING_NETWORK': 'hybrid'
+    };
+    return mapping[louvainPattern] || 'smurfing';
   }
 
   _classifyRingPattern(members) {
@@ -1535,6 +1597,425 @@ export class GraphAnalyzerEnhanced {
     
     return smurfing;
   }
+  /**
+   * Louvain Community Detection for Smurfing Rings
+   * Identifies densely connected communities that represent coordinated fraud rings
+   * Time Complexity: O(V * E) with optimizations
+   *
+   * This is the industry-standard approach used by tier-1 financial institutions
+   * because it finds the entire ring rather than flagging individual accounts,
+   * dramatically reducing false positives.
+   */
+  detectSmurfingRingsLouvain() {
+    console.log('Running Louvain community detection for smurfing rings...');
+    const startTime = Date.now();
+
+    // Step 1: Build undirected weighted graph
+    const graph = this._buildWeightedGraph();
+
+    // Step 2: Run Louvain algorithm
+    const communities = this._louvainClustering(graph);
+
+    // Step 3: Analyze communities for smurfing patterns
+    const smurfingRings = this._analyzeCommunitiesForSmurfing(communities, graph);
+
+    const endTime = Date.now();
+    console.log(`Louvain detection completed in ${((endTime - startTime) / 1000).toFixed(2)}s`);
+    console.log(`Found ${smurfingRings.length} potential smurfing rings`);
+
+    return smurfingRings;
+  }
+
+  /**
+   * Build weighted undirected graph from transaction data
+   * Weight = transaction frequency + amount similarity
+   * @private
+   */
+  _buildWeightedGraph() {
+    const graph = {
+      nodes: new Set(),
+      edges: new Map(), // "nodeA-nodeB" -> weight
+      neighbors: new Map() // nodeId -> Set of neighbor IDs
+    };
+
+    const accounts = this.graph.getAllAccounts();
+
+    // Add all nodes
+    accounts.forEach(acc => {
+      graph.nodes.add(acc);
+      graph.neighbors.set(acc, new Set());
+    });
+
+    // Build edges with weights
+    for (const accountId of accounts) {
+      const outgoing = this.graph.getOutgoingTransactions(accountId);
+      const incoming = this.graph.getIncomingTransactions(accountId);
+
+      // Process outgoing transactions
+      const counterpartyWeights = new Map();
+
+      for (const tx of outgoing) {
+        const counterparty = tx.receiver_id;
+        if (!counterpartyWeights.has(counterparty)) {
+          counterpartyWeights.set(counterparty, { count: 0, totalAmount: 0, amounts: [] });
+        }
+        const data = counterpartyWeights.get(counterparty);
+        data.count++;
+        data.totalAmount += tx.amount;
+        data.amounts.push(tx.amount);
+      }
+
+      // Process incoming transactions
+      for (const tx of incoming) {
+        const counterparty = tx.sender_id;
+        if (!counterpartyWeights.has(counterparty)) {
+          counterpartyWeights.set(counterparty, { count: 0, totalAmount: 0, amounts: [] });
+        }
+        const data = counterpartyWeights.get(counterparty);
+        data.count++;
+        data.totalAmount += tx.amount;
+        data.amounts.push(tx.amount);
+      }
+
+      // Calculate edge weights
+      for (const [counterparty, data] of counterpartyWeights) {
+        const edgeKey = this._getEdgeKey(accountId, counterparty);
+
+        // Weight formula: frequency * (1 + amount_consistency_bonus)
+        const avgAmount = data.totalAmount / data.count;
+        const amountVariance = this._calculateVariance(data.amounts, avgAmount);
+        const consistencyBonus = amountVariance < (avgAmount * 0.2) ? 2 : 1; // Bonus for consistent amounts
+
+        const weight = data.count * consistencyBonus;
+
+        graph.edges.set(edgeKey, weight);
+        graph.neighbors.get(accountId).add(counterparty);
+        graph.neighbors.get(counterparty).add(accountId);
+      }
+    }
+
+    return graph;
+  }
+
+  /**
+   * Louvain algorithm implementation
+   * @private
+   */
+  _louvainClustering(graph) {
+    // Initialize: each node in its own community
+    const nodeToCommunity = new Map();
+    const communityNodes = new Map();
+    let communityId = 0;
+
+    for (const node of graph.nodes) {
+      nodeToCommunity.set(node, communityId);
+      communityNodes.set(communityId, new Set([node]));
+      communityId++;
+    }
+
+    let improved = true;
+    let iteration = 0;
+    const maxIterations = 10;
+
+    while (improved && iteration < maxIterations) {
+      improved = false;
+      iteration++;
+
+      // Phase 1: Modularity optimization
+      for (const node of graph.nodes) {
+        const currentCommunity = nodeToCommunity.get(node);
+        const neighbors = graph.neighbors.get(node);
+
+        // Calculate modularity gain for moving to neighbor communities
+        const communityGains = new Map();
+
+        for (const neighbor of neighbors) {
+          const neighborCommunity = nodeToCommunity.get(neighbor);
+          if (neighborCommunity === currentCommunity) continue;
+
+          const gain = this._calculateModularityGain(
+            node,
+            currentCommunity,
+            neighborCommunity,
+            nodeToCommunity,
+            graph
+          );
+
+          if (!communityGains.has(neighborCommunity) || gain > communityGains.get(neighborCommunity)) {
+            communityGains.set(neighborCommunity, gain);
+          }
+        }
+
+        // Move to community with best gain
+        let bestCommunity = currentCommunity;
+        let bestGain = 0;
+
+        for (const [community, gain] of communityGains) {
+          if (gain > bestGain) {
+            bestGain = gain;
+            bestCommunity = community;
+          }
+        }
+
+        if (bestCommunity !== currentCommunity && bestGain > 0) {
+          // Move node to new community
+          communityNodes.get(currentCommunity).delete(node);
+          if (!communityNodes.has(bestCommunity)) {
+            communityNodes.set(bestCommunity, new Set());
+          }
+          communityNodes.get(bestCommunity).add(node);
+          nodeToCommunity.set(node, bestCommunity);
+          improved = true;
+        }
+      }
+    }
+
+    // Convert to array format
+    const communities = [];
+    for (const [communityId, nodes] of communityNodes) {
+      if (nodes.size > 0) {
+        communities.push({
+          id: communityId,
+          members: Array.from(nodes),
+          size: nodes.size
+        });
+      }
+    }
+
+    return communities;
+  }
+
+  /**
+   * Calculate modularity gain for moving a node to a new community
+   * @private
+   */
+  _calculateModularityGain(node, fromCommunity, toCommunity, nodeToCommunity, graph) {
+    const neighbors = graph.neighbors.get(node);
+    let internalEdges = 0;
+    let externalEdges = 0;
+
+    for (const neighbor of neighbors) {
+      const edgeKey = this._getEdgeKey(node, neighbor);
+      const weight = graph.edges.get(edgeKey) || 0;
+
+      const neighborCommunity = nodeToCommunity.get(neighbor);
+      if (neighborCommunity === toCommunity) {
+        internalEdges += weight;
+      } else if (neighborCommunity === fromCommunity) {
+        externalEdges += weight;
+      }
+    }
+
+    // Simplified modularity gain: favor moves that increase internal edges
+    return internalEdges - externalEdges * 0.5;
+  }
+
+  /**
+   * Analyze communities to identify smurfing patterns
+   * @private
+   */
+  _analyzeCommunitiesForSmurfing(communities, graph) {
+    const smurfingRings = [];
+
+    for (const community of communities) {
+      // Filter communities by size (smurfing rings typically have 5-50 accounts)
+      if (community.size < 5 || community.size > 100) continue;
+
+      // Analyze community structure
+      const analysis = this._analyzeCommunityStructure(community, graph);
+
+      // Smurfing indicators:
+      // 1. High density (many connections within community)
+      // 2. Central beneficiary (one account receives from many)
+      // 3. Similar transaction amounts
+      // 4. Temporal clustering (transactions happen in bursts)
+
+      const smurfingScore = this._calculateSmurfingScore(analysis);
+
+      if (smurfingScore > 0.6) { // Threshold for smurfing detection
+        smurfingRings.push({
+          communityId: community.id,
+          members: community.members,
+          size: community.size,
+          smurfingScore: smurfingScore.toFixed(3),
+          centralBeneficiaries: analysis.centralNodes,
+          density: analysis.density.toFixed(3),
+          avgTransactionAmount: analysis.avgAmount.toFixed(2),
+          amountConsistency: analysis.amountConsistency.toFixed(3),
+          temporalClustering: analysis.temporalClustering.toFixed(3),
+          totalVolume: analysis.totalVolume.toFixed(2),
+          pattern: this._classifySmurfingPattern(analysis)
+        });
+      }
+    }
+
+    // Sort by smurfing score (highest first)
+    smurfingRings.sort((a, b) => parseFloat(b.smurfingScore) - parseFloat(a.smurfingScore));
+
+    return smurfingRings;
+  }
+
+  /**
+   * Analyze community structure for smurfing indicators
+   * @private
+   */
+  _analyzeCommunityStructure(community, graph) {
+    const members = community.members;
+    const inDegree = new Map();
+    const outDegree = new Map();
+    const amounts = [];
+    const timestamps = [];
+    let totalVolume = 0;
+    let internalEdges = 0;
+
+    // Initialize degree maps
+    members.forEach(m => {
+      inDegree.set(m, 0);
+      outDegree.set(m, 0);
+    });
+
+    // Calculate degrees and collect transaction data
+    for (const member of members) {
+      const outgoing = this.graph.getOutgoingTransactions(member);
+      const incoming = this.graph.getIncomingTransactions(member);
+
+      for (const tx of outgoing) {
+        if (members.includes(tx.receiver_id)) {
+          internalEdges++;
+          outDegree.set(member, outDegree.get(member) + 1);
+          inDegree.set(tx.receiver_id, inDegree.get(tx.receiver_id) + 1);
+          amounts.push(tx.amount);
+          timestamps.push(tx.timestamp);
+          totalVolume += tx.amount;
+        }
+      }
+    }
+
+    // Find central nodes (high in-degree = beneficiaries)
+    const centralNodes = [];
+    const avgInDegree = Array.from(inDegree.values()).reduce((a, b) => a + b, 0) / members.length;
+
+    for (const [node, degree] of inDegree) {
+      if (degree > avgInDegree * 2) { // Significantly higher than average
+        centralNodes.push({
+          accountId: node,
+          inDegree: degree,
+          outDegree: outDegree.get(node)
+        });
+      }
+    }
+
+    // Calculate density
+    const maxPossibleEdges = members.length * (members.length - 1);
+    const density = maxPossibleEdges > 0 ? internalEdges / maxPossibleEdges : 0;
+
+    // Calculate amount consistency
+    const avgAmount = amounts.length > 0 ? amounts.reduce((a, b) => a + b, 0) / amounts.length : 0;
+    const amountVariance = this._calculateVariance(amounts, avgAmount);
+    const amountConsistency = avgAmount > 0 ? 1 - Math.min(amountVariance / avgAmount, 1) : 0;
+
+    // Calculate temporal clustering
+    const temporalClustering = this._calculateTemporalClustering(timestamps);
+
+    return {
+      density,
+      centralNodes,
+      avgAmount,
+      amountConsistency,
+      temporalClustering,
+      totalVolume,
+      internalEdges,
+      avgInDegree
+    };
+  }
+
+  /**
+   * Calculate smurfing score based on community characteristics
+   * @private
+   */
+  _calculateSmurfingScore(analysis) {
+    // Weighted scoring system
+    const weights = {
+      density: 0.2,           // Dense connections
+      centralNodes: 0.3,      // Clear beneficiaries
+      amountConsistency: 0.25, // Similar amounts
+      temporalClustering: 0.25 // Coordinated timing
+    };
+
+    const scores = {
+      density: Math.min(analysis.density * 2, 1), // Normalize
+      centralNodes: Math.min(analysis.centralNodes.length / 3, 1), // 3+ beneficiaries = max score
+      amountConsistency: analysis.amountConsistency,
+      temporalClustering: analysis.temporalClustering
+    };
+
+    let totalScore = 0;
+    for (const [key, weight] of Object.entries(weights)) {
+      totalScore += scores[key] * weight;
+    }
+
+    return totalScore;
+  }
+
+  /**
+   * Classify the type of smurfing pattern
+   * @private
+   */
+  _classifySmurfingPattern(analysis) {
+    const beneficiaryCount = analysis.centralNodes.length;
+    const density = analysis.density;
+
+    if (beneficiaryCount === 1 && density > 0.3) {
+      return 'SINGLE_BENEFICIARY_SMURFING';
+    } else if (beneficiaryCount > 1 && density > 0.4) {
+      return 'MULTI_BENEFICIARY_RING';
+    } else if (analysis.temporalClustering > 0.7) {
+      return 'COORDINATED_BURST_SMURFING';
+    } else if (analysis.amountConsistency > 0.8) {
+      return 'STRUCTURED_SMURFING';
+    } else {
+      return 'DISTRIBUTED_SMURFING_NETWORK';
+    }
+  }
+
+  /**
+   * Calculate temporal clustering coefficient
+   * @private
+   */
+  _calculateTemporalClustering(timestamps) {
+    if (timestamps.length < 2) return 0;
+
+    const sorted = [...timestamps].sort((a, b) => a - b);
+    const intervals = [];
+
+    for (let i = 1; i < sorted.length; i++) {
+      intervals.push(sorted[i] - sorted[i - 1]);
+    }
+
+    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const variance = this._calculateVariance(intervals, avgInterval);
+
+    // Low variance = high clustering
+    return avgInterval > 0 ? Math.max(0, 1 - (variance / avgInterval)) : 0;
+  }
+
+  /**
+   * Calculate variance of an array
+   * @private
+   */
+  _calculateVariance(values, mean) {
+    if (values.length === 0) return 0;
+    const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
+    return squaredDiffs.reduce((a, b) => a + b, 0) / values.length;
+  }
+
+  /**
+   * Get consistent edge key for undirected graph
+   * @private
+   */
+  _getEdgeKey(nodeA, nodeB) {
+    return nodeA < nodeB ? `${nodeA}-${nodeB}` : `${nodeB}-${nodeA}`;
+  }
 
   /**
    * Optimized cluster transactions by amount similarity
@@ -1649,4 +2130,415 @@ export class GraphAnalyzerEnhanced {
     
     return washTrading;
   }
+
+  /**
+   * Louvain Community Detection for Smurfing Rings
+   * Identifies densely connected communities that represent coordinated fraud rings
+   * Time Complexity: O(V * E) with optimizations
+   * 
+   * This is the industry-standard approach used by tier-1 financial institutions
+   * because it finds the entire ring rather than flagging individual accounts,
+   * dramatically reducing false positives.
+   */
+  detectSmurfingRingsLouvain() {
+    console.log('Running Louvain community detection for smurfing rings...');
+    const startTime = Date.now();
+    
+    // Step 1: Build undirected weighted graph
+    const graph = this._buildWeightedGraph();
+    
+    // Step 2: Run Louvain algorithm
+    const communities = this._louvainClustering(graph);
+    
+    // Step 3: Analyze communities for smurfing patterns
+    const smurfingRings = this._analyzeCommunitiesForSmurfing(communities, graph);
+    
+    const endTime = Date.now();
+    console.log(`Louvain detection completed in ${((endTime - startTime) / 1000).toFixed(2)}s`);
+    console.log(`Found ${smurfingRings.length} potential smurfing rings`);
+    
+    return smurfingRings;
+  }
+
+  /**
+   * Build weighted undirected graph from transaction data
+   * Weight = transaction frequency + amount similarity
+   * @private
+   */
+  _buildWeightedGraph() {
+    const graph = {
+      nodes: new Set(),
+      edges: new Map(), // "nodeA-nodeB" -> weight
+      neighbors: new Map() // nodeId -> Set of neighbor IDs
+    };
+    
+    const accounts = this.graph.getAllAccounts();
+    
+    // Add all nodes
+    accounts.forEach(acc => {
+      graph.nodes.add(acc);
+      graph.neighbors.set(acc, new Set());
+    });
+    
+    // Build edges with weights
+    for (const accountId of accounts) {
+      const outgoing = this.graph.getOutgoingTransactions(accountId);
+      const incoming = this.graph.getIncomingTransactions(accountId);
+      
+      // Process outgoing transactions
+      const counterpartyWeights = new Map();
+      
+      for (const tx of outgoing) {
+        const counterparty = tx.receiver_id;
+        if (!counterpartyWeights.has(counterparty)) {
+          counterpartyWeights.set(counterparty, { count: 0, totalAmount: 0, amounts: [] });
+        }
+        const data = counterpartyWeights.get(counterparty);
+        data.count++;
+        data.totalAmount += tx.amount;
+        data.amounts.push(tx.amount);
+      }
+      
+      // Process incoming transactions
+      for (const tx of incoming) {
+        const counterparty = tx.sender_id;
+        if (!counterpartyWeights.has(counterparty)) {
+          counterpartyWeights.set(counterparty, { count: 0, totalAmount: 0, amounts: [] });
+        }
+        const data = counterpartyWeights.get(counterparty);
+        data.count++;
+        data.totalAmount += tx.amount;
+        data.amounts.push(tx.amount);
+      }
+      
+      // Calculate edge weights
+      for (const [counterparty, data] of counterpartyWeights) {
+        const edgeKey = this._getEdgeKey(accountId, counterparty);
+        
+        // Weight formula: frequency * (1 + amount_consistency_bonus)
+        const avgAmount = data.totalAmount / data.count;
+        const amountVariance = this._calculateVariance(data.amounts, avgAmount);
+        const consistencyBonus = amountVariance < (avgAmount * 0.2) ? 2 : 1; // Bonus for consistent amounts
+        
+        const weight = data.count * consistencyBonus;
+        
+        graph.edges.set(edgeKey, weight);
+        graph.neighbors.get(accountId).add(counterparty);
+        graph.neighbors.get(counterparty).add(accountId);
+      }
+    }
+    
+    return graph;
+  }
+
+  /**
+   * Louvain algorithm implementation
+   * @private
+   */
+  _louvainClustering(graph) {
+    // Initialize: each node in its own community
+    const nodeToCommunity = new Map();
+    const communityNodes = new Map();
+    let communityId = 0;
+    
+    for (const node of graph.nodes) {
+      nodeToCommunity.set(node, communityId);
+      communityNodes.set(communityId, new Set([node]));
+      communityId++;
+    }
+    
+    let improved = true;
+    let iteration = 0;
+    const maxIterations = 10;
+    
+    while (improved && iteration < maxIterations) {
+      improved = false;
+      iteration++;
+      
+      // Phase 1: Modularity optimization
+      for (const node of graph.nodes) {
+        const currentCommunity = nodeToCommunity.get(node);
+        const neighbors = graph.neighbors.get(node);
+        
+        // Calculate modularity gain for moving to neighbor communities
+        const communityGains = new Map();
+        
+        for (const neighbor of neighbors) {
+          const neighborCommunity = nodeToCommunity.get(neighbor);
+          if (neighborCommunity === currentCommunity) continue;
+          
+          const gain = this._calculateModularityGain(
+            node, 
+            currentCommunity, 
+            neighborCommunity, 
+            nodeToCommunity, 
+            graph
+          );
+          
+          if (!communityGains.has(neighborCommunity) || gain > communityGains.get(neighborCommunity)) {
+            communityGains.set(neighborCommunity, gain);
+          }
+        }
+        
+        // Move to community with best gain
+        let bestCommunity = currentCommunity;
+        let bestGain = 0;
+        
+        for (const [community, gain] of communityGains) {
+          if (gain > bestGain) {
+            bestGain = gain;
+            bestCommunity = community;
+          }
+        }
+        
+        if (bestCommunity !== currentCommunity && bestGain > 0) {
+          // Move node to new community
+          communityNodes.get(currentCommunity).delete(node);
+          if (!communityNodes.has(bestCommunity)) {
+            communityNodes.set(bestCommunity, new Set());
+          }
+          communityNodes.get(bestCommunity).add(node);
+          nodeToCommunity.set(node, bestCommunity);
+          improved = true;
+        }
+      }
+    }
+    
+    // Convert to array format
+    const communities = [];
+    for (const [communityId, nodes] of communityNodes) {
+      if (nodes.size > 0) {
+        communities.push({
+          id: communityId,
+          members: Array.from(nodes),
+          size: nodes.size
+        });
+      }
+    }
+    
+    return communities;
+  }
+
+  /**
+   * Calculate modularity gain for moving a node to a new community
+   * @private
+   */
+  _calculateModularityGain(node, fromCommunity, toCommunity, nodeToCommunity, graph) {
+    const neighbors = graph.neighbors.get(node);
+    let internalEdges = 0;
+    let externalEdges = 0;
+    
+    for (const neighbor of neighbors) {
+      const edgeKey = this._getEdgeKey(node, neighbor);
+      const weight = graph.edges.get(edgeKey) || 0;
+      
+      const neighborCommunity = nodeToCommunity.get(neighbor);
+      if (neighborCommunity === toCommunity) {
+        internalEdges += weight;
+      } else if (neighborCommunity === fromCommunity) {
+        externalEdges += weight;
+      }
+    }
+    
+    // Simplified modularity gain: favor moves that increase internal edges
+    return internalEdges - externalEdges * 0.5;
+  }
+
+  /**
+   * Analyze communities to identify smurfing patterns
+   * @private
+   */
+  _analyzeCommunitiesForSmurfing(communities, graph) {
+    const smurfingRings = [];
+    
+    for (const community of communities) {
+      // Filter communities by size (smurfing rings typically have 5-50 accounts)
+      // Lowered minimum to 3 for better detection of smaller rings
+      if (community.size < 3 || community.size > 100) continue;
+      
+      // Analyze community structure
+      const analysis = this._analyzeCommunityStructure(community, graph);
+      
+      // Smurfing indicators:
+      // 1. High density (many connections within community)
+      // 2. Central beneficiary (one account receives from many)
+      // 3. Similar transaction amounts
+      // 4. Temporal clustering (transactions happen in bursts)
+      
+      const smurfingScore = this._calculateSmurfingScore(analysis);
+      
+      if (smurfingScore > 0.25) { // Lowered threshold for better detection
+        smurfingRings.push({
+          communityId: community.id,
+          members: community.members,
+          size: community.size,
+          smurfingScore: smurfingScore.toFixed(3),
+          centralBeneficiaries: analysis.centralNodes,
+          density: analysis.density.toFixed(3),
+          avgTransactionAmount: analysis.avgAmount.toFixed(2),
+          amountConsistency: analysis.amountConsistency.toFixed(3),
+          temporalClustering: analysis.temporalClustering.toFixed(3),
+          totalVolume: analysis.totalVolume.toFixed(2),
+          pattern: this._classifySmurfingPattern(analysis)
+        });
+      }
+    }
+    
+    // Sort by smurfing score (highest first)
+    smurfingRings.sort((a, b) => parseFloat(b.smurfingScore) - parseFloat(a.smurfingScore));
+    
+    return smurfingRings;
+  }
+
+  /**
+   * Analyze community structure for smurfing indicators
+   * @private
+   */
+  _analyzeCommunityStructure(community, graph) {
+    const members = community.members;
+    const inDegree = new Map();
+    const outDegree = new Map();
+    const amounts = [];
+    const timestamps = [];
+    let totalVolume = 0;
+    let internalEdges = 0;
+    
+    // Initialize degree maps
+    members.forEach(m => {
+      inDegree.set(m, 0);
+      outDegree.set(m, 0);
+    });
+    
+    // Calculate degrees and collect transaction data
+    for (const member of members) {
+      const outgoing = this.graph.getOutgoingTransactions(member);
+      const incoming = this.graph.getIncomingTransactions(member);
+      
+      for (const tx of outgoing) {
+        if (members.includes(tx.receiver_id)) {
+          internalEdges++;
+          outDegree.set(member, outDegree.get(member) + 1);
+          inDegree.set(tx.receiver_id, inDegree.get(tx.receiver_id) + 1);
+          amounts.push(tx.amount);
+          timestamps.push(tx.timestamp);
+          totalVolume += tx.amount;
+        }
+      }
+    }
+    
+    // Find central nodes (high in-degree = beneficiaries)
+    const centralNodes = [];
+    const avgInDegree = Array.from(inDegree.values()).reduce((a, b) => a + b, 0) / members.length;
+    
+    for (const [node, degree] of inDegree) {
+      if (degree > avgInDegree * 2) { // Significantly higher than average
+        centralNodes.push({
+          accountId: node,
+          inDegree: degree,
+          outDegree: outDegree.get(node)
+        });
+      }
+    }
+    
+    // Calculate density
+    const maxPossibleEdges = members.length * (members.length - 1);
+    const density = maxPossibleEdges > 0 ? internalEdges / maxPossibleEdges : 0;
+    
+    // Calculate amount consistency
+    const avgAmount = amounts.length > 0 ? amounts.reduce((a, b) => a + b, 0) / amounts.length : 0;
+    const amountVariance = this._calculateVariance(amounts, avgAmount);
+    const amountConsistency = avgAmount > 0 ? 1 - Math.min(amountVariance / avgAmount, 1) : 0;
+    
+    // Calculate temporal clustering
+    const temporalClustering = this._calculateTemporalClusteringCoefficient(timestamps);
+    
+    return {
+      density,
+      centralNodes,
+      avgAmount,
+      amountConsistency,
+      temporalClustering,
+      totalVolume,
+      internalEdges,
+      avgInDegree
+    };
+  }
+
+  /**
+   * Calculate smurfing score based on community characteristics
+   * @private
+   */
+  _calculateSmurfingScore(analysis) {
+    // Weighted scoring system
+    const weights = {
+      density: 0.25,           // Dense connections
+      centralNodes: 0.25,      // Clear beneficiaries
+      amountConsistency: 0.3,  // Similar amounts (increased weight)
+      temporalClustering: 0.2  // Coordinated timing
+    };
+    
+    const scores = {
+      density: Math.min(analysis.density * 1.5, 1), // Normalize (lowered multiplier)
+      centralNodes: Math.min(analysis.centralNodes.length / 2, 1), // 2+ beneficiaries = max score
+      amountConsistency: analysis.amountConsistency,
+      temporalClustering: analysis.temporalClustering
+    };
+    
+    let totalScore = 0;
+    for (const [key, weight] of Object.entries(weights)) {
+      totalScore += scores[key] * weight;
+    }
+    
+    return totalScore;
+  }
+
+  /**
+   * Classify the type of smurfing pattern
+   * @private
+   */
+  _classifySmurfingPattern(analysis) {
+    const beneficiaryCount = analysis.centralNodes.length;
+    const density = analysis.density;
+    
+    // Prioritize amount consistency for structured smurfing
+    if (analysis.amountConsistency > 0.85) {
+      return 'STRUCTURED_SMURFING';
+    } else if (analysis.temporalClustering > 0.7) {
+      return 'COORDINATED_BURST_SMURFING';
+    } else if (beneficiaryCount === 1 && density > 0.2) {
+      return 'SINGLE_BENEFICIARY_SMURFING';
+    } else if (beneficiaryCount > 1 && density > 0.3) {
+      return 'MULTI_BENEFICIARY_RING';
+    } else {
+      return 'DISTRIBUTED_SMURFING_NETWORK';
+    }
+  }
+
+  /**
+   * Calculate temporal clustering coefficient
+   * @private
+   */
+  _calculateTemporalClusteringCoefficient(timestamps) {
+    if (timestamps.length < 2) return 0;
+    
+    const sorted = [...timestamps].sort((a, b) => a - b);
+    const intervals = [];
+    
+    for (let i = 1; i < sorted.length; i++) {
+      intervals.push(sorted[i] - sorted[i - 1]);
+    }
+    
+    if (intervals.length === 0) return 0;
+    
+    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    if (avgInterval === 0) return 1; // All at same time = perfect clustering
+    
+    const variance = this._calculateVariance(intervals, avgInterval);
+    const coefficientOfVariation = Math.sqrt(variance) / avgInterval;
+    
+    // Low coefficient of variation = high clustering
+    // CV < 0.5 is considered highly clustered
+    return Math.max(0, Math.min(1, 1 - coefficientOfVariation));
+  }
+
 }

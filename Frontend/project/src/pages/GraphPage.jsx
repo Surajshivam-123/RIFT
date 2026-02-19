@@ -756,7 +756,6 @@ export default function GraphPage({ onNavigate, onSelectionChange }) {
                     <span style={{ textTransform: "uppercase", letterSpacing: "0.08em", background: color.node + "22", color: color.node, padding: "1px 5px", borderRadius: 3, fontWeight: 700 }}>{ring.pattern_type}</span>
                     <span style={{ marginLeft: 5 }}>{ring.member_accounts.length} members</span>
                   </div>
-                  {ring.total_amount_cycled && <div style={{ fontSize: 8, color: "#a8a29e" }}>₹{ring.total_amount_cycled.toLocaleString("en-IN")} cycled</div>}
                   {isActive && <div style={{ marginTop: 5, fontSize: 8, color: color.node, fontWeight: 600 }}>✓ Isolated · click to clear</div>}
                 </div>
               );
@@ -965,7 +964,7 @@ function NodePopup({ nodePopup, ringColorMap, style, onClose }) {
         {ring && (
           <div style={{ background: ringColor.node + "12", border: `1px solid ${ringColor.edge}44`, borderRadius: 7, padding: "8px 10px" }}>
             <p style={{ fontSize: 8, color: ringColor.node, letterSpacing: "0.1em", marginBottom: 5, fontWeight: 700 }}>RING MEMBERSHIP</p>
-            {[["Pattern", ring.pattern_type], ["Ring risk", `${ring.risk_score}%`], ["Total cycled", `₹${ring.total_amount_cycled?.toLocaleString("en-IN")}`]].map(([k, v]) => (
+            {[["Pattern", ring.pattern_type], ["Members", ring.member_accounts.length], ["Detection", ring.detection_method || "connectivity"]].map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                 <span style={{ fontSize: 9, color: "#374151" }}>{k}</span>
                 <span style={{ fontSize: 9, fontWeight: 700, color: ringColor.node }}>{v}</span>
