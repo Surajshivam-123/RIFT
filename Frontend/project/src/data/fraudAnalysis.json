@@ -1,0 +1,110 @@
+{
+  "suspicious_accounts": [
+    {
+      "account_id": "ACC_A",
+      "suspicion_score": 95.1,
+      "detected_patterns": ["cycle_length_3", "high_velocity", "round_tripping"],
+      "ring_id": "RING_001"
+    },
+    {
+      "account_id": "ACC_B",
+      "suspicion_score": 93.4,
+      "detected_patterns": ["cycle_length_3", "rapid_layering"],
+      "ring_id": "RING_001"
+    },
+    {
+      "account_id": "ACC_C",
+      "suspicion_score": 91.8,
+      "detected_patterns": ["cycle_length_3", "round_tripping"],
+      "ring_id": "RING_001"
+    },
+    {
+      "account_id": "ACC_D",
+      "suspicion_score": 84.2,
+      "detected_patterns": ["cycle_length_3", "structuring"],
+      "ring_id": "RING_002"
+    },
+    {
+      "account_id": "ACC_E",
+      "suspicion_score": 82.7,
+      "detected_patterns": ["cycle_length_3", "layering"],
+      "ring_id": "RING_002"
+    },
+    {
+      "account_id": "ACC_F",
+      "suspicion_score": 80.3,
+      "detected_patterns": ["cycle_length_3", "smurfing"],
+      "ring_id": "RING_002"
+    },
+    {
+      "account_id": "ACC_H",
+      "suspicion_score": 78.6,
+      "detected_patterns": ["aggregation", "high_velocity", "fan_in"],
+      "ring_id": null
+    },
+    {
+      "account_id": "ACC_M",
+      "suspicion_score": 62.4,
+      "detected_patterns": ["structuring", "chain_layering"],
+      "ring_id": "RING_003"
+    },
+    {
+      "account_id": "ACC_N",
+      "suspicion_score": 60.1,
+      "detected_patterns": ["chain_layering"],
+      "ring_id": "RING_003"
+    },
+    {
+      "account_id": "ACC_O",
+      "suspicion_score": 58.9,
+      "detected_patterns": ["chain_layering"],
+      "ring_id": "RING_003"
+    },
+    {
+      "account_id": "ACC_P",
+      "suspicion_score": 57.3,
+      "detected_patterns": ["chain_layering"],
+      "ring_id": "RING_003"
+    },
+    {
+      "account_id": "ACC_Q",
+      "suspicion_score": 55.0,
+      "detected_patterns": ["chain_layering"],
+      "ring_id": "RING_003"
+    }
+  ],
+  "fraud_rings": [
+    {
+      "ring_id": "RING_001",
+      "member_accounts": ["ACC_A", "ACC_B", "ACC_C"],
+      "pattern_type": "cycle",
+      "risk_score": 95.3,
+      "total_amount_cycled": 14300,
+      "description": "Perfect 3-node cycle: ACC_A→ACC_B→ACC_C→ACC_A. Funds recirculate with ~10% skimmed each hop."
+    },
+    {
+      "ring_id": "RING_002",
+      "member_accounts": ["ACC_D", "ACC_E", "ACC_F"],
+      "pattern_type": "cycle",
+      "risk_score": 84.9,
+      "total_amount_cycled": 5500,
+      "description": "3-node cycle: ACC_D→ACC_E→ACC_F→ACC_D. Smaller amounts, consistent timing pattern."
+    },
+    {
+      "ring_id": "RING_003",
+      "member_accounts": ["ACC_M", "ACC_N", "ACC_O", "ACC_P", "ACC_Q"],
+      "pattern_type": "chain_layering",
+      "risk_score": 63.2,
+      "total_amount_cycled": 1080,
+      "description": "Linear chain: ACC_M→ACC_N→ACC_O→ACC_P→ACC_Q. Classic layering to obscure fund origin."
+    }
+  ],
+  "summary": {
+    "total_accounts_analyzed": 17,
+    "suspicious_accounts_flagged": 12,
+    "fraud_rings_detected": 3,
+    "processing_time_seconds": 0.9,
+    "analysis_timestamp": "2024-01-05T15:00:00Z",
+    "model_version": "mule-detector-v2.1"
+  }
+}
