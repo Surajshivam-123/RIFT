@@ -1,0 +1,8 @@
+node_modules
+data
+.vscode
+tests
+example-10k-optimized.js
+executive-summary-10k.json
+results-10k-optimized.json
+suspicious-accounts-10k.csv
