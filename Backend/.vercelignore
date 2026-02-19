@@ -1,0 +1,13 @@
+node_modules
+tests
+*.test.js
+*.md
+data
+example-*.js
+test-*.js
+test-*.csv
+results-*.json
+executive-*.json
+suspicious-*.csv
+.env.example
+.vscode
