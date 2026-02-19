@@ -1,8 +1,8 @@
 import { createContext, useState, useCallback } from "react";
 import Papa from "papaparse";
 
-// Backend API URL
-const API_URL = "http://localhost:3001";
+// Backend API URL - uses environment variable for deployment flexibility
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 // ─── 1. Create the context ───────────────────────────────────────────────────
 export const TransactionContext = createContext(null);
