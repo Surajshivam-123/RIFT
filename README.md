@@ -17,6 +17,18 @@
 
 ---
 
+
+## 👥 Team Members
+
+| Name | GitHub |
+|---|---|
+| Suraj Kumar | [@Surajshivam-123](https://github.com/Surajshivam-123) |
+| Ram Kumar | [@RamK2006](https://github.com/RamK2006) |
+| Madan Ram Sai Vuppala | [@__Madan-Ram-sai__](https://github.com/__Madan-Ram-sai__) |
+| Basant Bansal | [@__basantbansal__](https://github.com/__basantbansal__) |
+
+---
+
 ## 📌 Problem Statement
 
 Money muling is a cornerstone of financial crime. Criminals recruit networks of individuals — "mules" — to move illicit funds through chains of bank accounts, making dirty money appear legitimate by the time it reaches its final destination. Each individual transaction looks ordinary. The crime only becomes visible when you look at the **relationships** between accounts — the graph.
@@ -745,16 +757,7 @@ Available flags:
 
 ---
 
-## 👥 Team Members
 
-| Name | GitHub |
-|---|---|
-| Suraj Kumar | [@Surajshivam-123](https://github.com/Surajshivam-123) |
-| Ram Kumar | [@RamK2006](https://github.com/RamK2006) |
-| Madan Ram Sai Vuppala | [@__Madan-Ram-sai__](https://github.com/__Madan-Ram-sai__) |
-| Basant Bansal | [@__basantbansal__](https://github.com/__basantbansal__) |
-
----
 
 ## 📄 License
 
