@@ -9,9 +9,9 @@
 
 | Resource | Link |
 |---|---|
-| 🌐 Live Demo | [https://your-deployed-app.vercel.app](https://dist-self-nu.vercel.app/) |
-| 🎥 LinkedIn Demo Video | [Watch on LinkedIn]([https://linkedin.com/your-video-link](https://www.linkedin.com/posts/basant-bansal-22066036b_rifthackathon-rift26-moneymulingdetection-ugcPost-7430409965955289089-6lMN?utm_source=social_share_send&utm_medium=android_app&rcm=ACoAAFvBXzgBZWci7CZeyTmkA4t2HGKdBg0G2uw&utm_campaign=copy_link)) |
-| 📁 GitHub Repository | [github.com/your-org/money-muling-detection](https://github.com/Surajshivam-123/RIFT.git) |
+| 🌐 Live Demo | [https://dist-self-nu.vercel.app/] |
+| 🎥 LinkedIn Demo Video | [Watch on LinkedIn]([(https://www.linkedin.com/posts/basant-bansal-22066036b_rifthackathon-rift26-moneymulingdetection-ugcPost-7430409965955289089-6lMN?utm_source=social_share_send&utm_medium=android_app&rcm=ACoAAFvBXzgBZWci7CZeyTmkA4t2HGKdBg0G2uw&utm_campaign=copy_link)] |
+| 📁 GitHub Repository | [https://github.com/Surajshivam-123/RIFT.git] |
 
 > **Hashtags:** `#RIFTHackathon` `#MoneyMulingDetection` `#FinancialCrime` `#GraphTheory` `#RIFT2026`
 
